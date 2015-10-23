@@ -65,89 +65,6 @@ class GraphDatabase(BaseGraphDatabase):
             {}, label=label,
             include_properties=include_properties)
 
-    def get_filtered_nodes(self, lookups, label=None, include_properties=None,
-                           limit=None, offset=None, order_by=None):
-        if label is not None:
-            labels = self._prep_labels(label)
-            script = "g.V().or(%s)" % labels
-        else:
-            script = "g.V()"
-        bindings = {}
-        if lookups:
-            where, bindings = self._prep_lookups(lookups)
-            script = "%s.and(%s)" % (script, where)
-        resp = self.gdb.execute(script, bindings=bindings)
-        if include_properties:
-            for v in resp.data:
-                props = {k: v[0]["value"] for k, v in v["properties"].items()}
-                yield (v["id"], props, v["properties"]["_label"][0]["value"])
-        else:
-            for v in resp.data:
-                yield (v["id"], None, None)
-
-    def get_filtered_relationships(self, lookups, label=None,
-                                   include_properties=None, limit=None,
-                                   offset=None, order_by=None):
-        if label is not None:
-            labels = self._prep_labels(label)
-            script = "g.E().or(%s)" % labels
-        else:
-            script = "g.E()"
-        bindings = {}
-        if lookups:
-            where, bindings = self._prep_lookups(lookups)
-            script = "%s.and(%s)" % (script, where)
-        resp = self.gdb.execute(script, bindings=bindings)
-        if include_properties:
-            for e in resp.data:
-                props = e["properties"]
-                # Node class in graph/mixins will do this if not here.
-                out_v = self.gdb.execute(
-                    "g.V(vid)", bindings={"vid": e["outV"]})
-                in_v = self.gdb.execute(
-                    "g.V(vid)", bindings={"vid": e["inV"]})
-                out_v = out_v.data[0]
-                in_v = in_v.data[0]
-                source = {
-                    "id": out_v["id"],
-                    "properties": out_v["properties"],
-                    "label": out_v["properties"]["_label"]}
-                target = {
-                    "id": in_v["id"],
-                    "properties": in_v["properties"],
-                    "label": in_v["properties"]["_label"]}
-                yield (
-                    e["id"], props, e["properties"]["_label"], source, target)
-        else:
-            for e in resp.data:
-                yield (e["id"], None, None)
-
-    def _prep_labels(self, label):
-        has = "has('%s', '%s')"
-        labels = []
-        if isinstance(label, (list, tuple)):
-            label = [has % ('_label', unicode(l)) for l in label
-                     if bool(l)]
-            labels += label
-        elif label:
-            label = has % ('_label', unicode(label))
-            labels.append(label)
-        return ','.join(labels)
-
-    def _prep_lookups(self, lookups):
-        wheres = q_lookup_builder()
-        for lookup in lookups:
-            if isinstance(lookup, q_lookup_builder):
-                wheres &= lookup
-            elif isinstance(lookup, dict):
-                wheres &= q_lookup_builder(**lookup)
-        where, bindings = wheres.get_query_objects()
-        return where, bindings
-
-    def lookup_builder(self):
-        # Should be added to base.
-        return q_lookup_builder
-
     def get_nodes_count(self, label=None):
         """
         Get the number of total nodes.
@@ -254,13 +171,145 @@ class GraphDatabase(BaseGraphDatabase):
         count = resp.data[0]
         return count
 
+    def get_filtered_nodes(self, lookups, label=None, include_properties=None,
+                           limit=None, offset=None, order_by=None):
+        if label is not None:
+            labels = self._prep_labels(label)
+            script = "g.V().or(%s)" % labels
+        else:
+            script = "g.V()"
+        bindings = {}
+        if lookups:
+            where, bindings = self._prep_lookups(lookups)
+            script = "%s.and(%s)" % (script, where)
+        print("script:", script, bindings)
+        resp = self.gdb.execute(script, bindings=bindings)
+        print("resp:", resp)
+        if include_properties:
+            for v in resp.data:
+                props = {k: v[0]["value"] for k, v in v["properties"].items()}
+                yield (v["id"], props, v["properties"]["_label"][0]["value"])
+        else:
+            for v in resp.data:
+                yield (v["id"], None, None)
+
+    def get_filtered_relationships(self, lookups, label=None,
+                                   include_properties=None, limit=None,
+                                   offset=None, order_by=None):
+        if label is not None:
+            labels = self._prep_labels(label)
+            script = "g.E().or(%s)" % labels
+        else:
+            script = "g.E()"
+        bindings = {}
+        if lookups:
+            where, bindings = self._prep_lookups(lookups)
+            script = "%s.and(%s)" % (script, where)
+        resp = self.gdb.execute(script, bindings=bindings)
+        if include_properties:
+            for e in resp.data:
+                props = e["properties"]
+                # Node class in graph/mixins will do this if not here.
+                out_v = self.gdb.execute(
+                    "g.V(vid)", bindings={"vid": e["outV"]})
+                in_v = self.gdb.execute(
+                    "g.V(vid)", bindings={"vid": e["inV"]})
+                out_v = out_v.data[0]
+                in_v = in_v.data[0]
+                source = {
+                    "id": out_v["id"],
+                    "properties": out_v["properties"],
+                    "label": out_v["properties"]["_label"]}
+                target = {
+                    "id": in_v["id"],
+                    "properties": in_v["properties"],
+                    "label": in_v["properties"]["_label"]}
+                yield (
+                    e["id"], props, e["properties"]["_label"], source, target)
+        else:
+            for e in resp.data:
+                yield (e["id"], None, None)
+
+    def _prep_labels(self, label):
+        has = "has('%s', '%s')"
+        labels = []
+        if isinstance(label, (list, tuple)):
+            label = [has % ('_label', unicode(l)) for l in label
+                     if bool(l)]
+            labels += label
+        elif label:
+            label = has % ('_label', unicode(label))
+            labels.append(label)
+        return ','.join(labels)
+
+    def _prep_lookups(self, lookups):
+        wheres = q_lookup_builder()
+        for lookup in lookups:
+            if isinstance(lookup, q_lookup_builder):
+                wheres &= lookup
+            elif isinstance(lookup, dict):
+                wheres &= q_lookup_builder(**lookup)
+        where, bindings = wheres.get_query_objects()
+        return where, bindings
+
+    def lookup_builder(self):
+        # Should be added to base.
+        return q_lookup_builder
+
     # Quering
-    def query(self, *args, **kwargs):
+    def query(self, query_dict, limit=None, offset=None, order_by=None,
+              headers=None, only_ids=None):
         # TODO: Define the requirements of the queries.
         """
         XXX
         """
-        raise NotImplementedError("Method has to be implemented")
+        import ipdb; ipdb.set_trace()
+        script, bindings = self._query_generator(query_dict)
+        resp = self.gdb.execute(script, bindings=bindings)
+        print("resp")
+
+    def _query_generator(self, query_dict):
+        conditions = query_dict["conditions"]
+        origins = query_dict["origins"]
+        conditions, bindings = self._query_generator_conditions(conditions)
+        origin = self._query_generator_origins(origins)
+        script = "%s.%s" % (origin, conditions)
+        return script, bindings
+
+    def _query_generator_conditions(self, conditions):
+        query_params = {}
+        conditions_list = []
+        for lookup, property_tuple, match, connector, datatype in conditions:
+            q_lookup = q_lookup_builder(property=property_tuple[2],
+                                      lookup=lookup,
+                                      match=match,
+                                      var=property_tuple[1],
+                                      datatype=datatype)
+            q_objects = q_lookup.get_query_objects(params=query_params)
+            condition = q_objects[0]
+            bindings = q_objects[1]
+            conditions_list.append(condition)
+            query_params.update(bindings)
+        conditions = ".".join(conditions_list)
+        return conditions, query_params
+
+    def _query_generator_origins(self, origins):
+        script = ""
+        for origin in origins:
+            origin_type = origin["type"]
+            type_id = origin["type_id"]
+            if origin_type == "node":
+                if not script:
+                    script += "g.V().has('_label', '%s' )" % unicode(type_id)
+                else:
+                    #TODO
+                    pass
+            else:
+                #TODO
+                pass
+        return script
+
+
 
     def nodes_query(self, *args, **kwargs):
         # TODO: Define the requirements of the queries.
