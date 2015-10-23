@@ -270,46 +270,50 @@ class GraphDatabase(BaseGraphDatabase):
 
     def _query_generator(self, query_dict):
         conditions = query_dict["conditions"]
-        origins = query_dict["origins"]
+        patterns = query_dict["patterns"]
         conditions, bindings = self._query_generator_conditions(conditions)
-        origin = self._query_generator_origins(origins)
-        script = "%s.%s" % (origin, conditions)
+        script = self._query_generator_patterns(patterns, conditions)
         return script, bindings
 
     def _query_generator_conditions(self, conditions):
         query_params = {}
-        conditions_list = []
+        conditions_dict = {}
         for lookup, property_tuple, match, connector, datatype in conditions:
+            alias = property_tuple[1]
             q_lookup = q_lookup_builder(property=property_tuple[2],
-                                      lookup=lookup,
-                                      match=match,
-                                      var=property_tuple[1],
-                                      datatype=datatype)
+                                        lookup=lookup,
+                                        match=match,
+                                        var=property_tuple[1],
+                                        datatype=datatype)
             q_objects = q_lookup.get_query_objects(params=query_params)
             condition = q_objects[0]
             bindings = q_objects[1]
-            conditions_list.append(condition)
+            conditions_dict.setdefault(alias, [])
+            conditions_dict[alias].append(condition)
             query_params.update(bindings)
-        conditions = ".".join(conditions_list)
-        return conditions, query_params
 
-    def _query_generator_origins(self, origins):
-        script = ""
-        for origin in origins:
-            origin_type = origin["type"]
-            type_id = origin["type_id"]
-            if origin_type == "node":
-                if not script:
-                    script += "g.V().has('_label', '%s' )" % unicode(type_id)
-                else:
-                    #TODO
-                    pass
-            else:
-                #TODO
-                pass
-        return script
+        return conditions_dict, query_params
 
+    def _query_generator_patterns(self, patterns, conditions):
+        pattern_alias = 1
+        script = "g.V().match("
+        for pattern in patterns:
 
+            source = pattern["source"]
+            source_alias = source["alias"]
+            source_type_id = source["type_id"]
+            source_conditions = conditions.get(source_alias, [])
+
+            relation = pattern["relation"]
+            relation_alias = relation["slug"]
+            relation_type_id = relation["type_id"]
+
+            target = pattern["target"]
+            target_alias = relation["alias"]
+            target_type_id = target["type_id"]
+            target_conditions = conditions.get(target_alias, [])
+            # __.as('alias').has("_label", "1").outE().has("_label", "2").inV().has("_label", "3").as('alias'),
+            
 
     def nodes_query(self, *args, **kwargs):
         # TODO: Define the requirements of the queries.
