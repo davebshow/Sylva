@@ -6,53 +6,56 @@ class Q(BaseQ):
 
     def _get_lookup_and_match(self):
         if self.lookup in ["exact", "iexact"]:
-            lookup = "EQUAL"
+            lookup = "eq"
             match = "{0}".format(self.match)
         elif self.lookup in ["contains", "icontains"]:
-            lookup = "CONTAINS_PREFIX"
+            # This behaviour is weird, textContains only works for tokenized
+            # words maybe ask about this on the list
+            lookup = "textContains"
             match = "{0}".format(self.match)
         elif self.lookup in ["startswith", "istartswith"]:
-            lookup = "PREFIX"
+            lookup = "textPrefix"
             match = "{0}".format(self.match)
         elif self.lookup in ["endswith", "iendswith"]:
-            lookup = "REGEX"
+            lookup = "textRegex"
             match = ".*{0}".format(self.match)
         elif self.lookup in ["regex", "iregex"]:
-            lookup = "REGEX"
+            lookup = "textRegex"
             match = "{0}".format(self.match)
         elif self.lookup == "gt":
-            lookup = "GREATER_THAN"
+            lookup = "gt"
             match = "{0}".format(self.match)
         elif self.lookup == "gte":
-            lookup = "GREATER_THAN_EQUAL"
+            lookup = "gte"
             match = "{0}".format(self.match)
         elif self.lookup == "lt":
-            lookup = "LESS_THAN"
+            lookup = "lt"
             match = "{0}".format(self.match)
         elif self.lookup == "lte":
-            lookup = "LESS_THAN_EQUAL"
+            lookup = "lte"
             match = "{0}".format(self.match)
         elif self.lookup == "in":
-            lookup = "WITHIN"
+            lookup = "inside"
             match = "{0}".format(self.match)
         elif self.lookup == "inrange":
-            lookup = "BETWEEN"
+            lookup = "inside"
             match = "{0}".format(self.match)
         elif self.lookup == "isnull":
             if self.match:
-                lookup = "EQUAL"
+                lookup = "eq"
             else:
-                lookup = "NOT_EQUAL"
+                lookup = "neq"
             match = "null"
         elif self.lookup in ["eq", "equals"]:
-            lookup = "EQUAL"
+            lookup = "eq"
             match = "{0}".format(self.match)
         elif self.lookup in ["neq", "notequals"]:
-            lookup = "NOT_EQUAL"
+            lookup = "neq"
             match = "{0}".format(self.match)
         else:
             lookup = self.lookup
             match = ""
+        print("WTFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFf")
         return lookup, match
 
     def get_query_objects(self, prefix=None, params=None):
@@ -97,6 +100,6 @@ class Q(BaseQ):
         if self.property is not None:
             key = "{0}p{1}".format(prefix, len(params))
             params[key] = match
-            query_format = u"has('{0}', new P({1}, {2}))"
+            query_format = u"has('{0}', {1}({2}))"
             query = query_format.format(self.property, lookup, key)
         return query, params
