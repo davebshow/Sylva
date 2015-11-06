@@ -1,4 +1,5 @@
 # -*- coding: utf-8 -*-
+import networkx as nx
 from requests.exceptions import ConnectionError
 from gremlinrestclient import TitanGraph, Vertex, GremlinServerError
 from engines.gdb.backends import (BaseGraphDatabase, NodeDoesNotExist,
@@ -182,9 +183,7 @@ class GraphDatabase(BaseGraphDatabase):
         if lookups:
             where, bindings = self._prep_lookups(lookups)
             script = "%s.and(%s)" % (script, where)
-        print("script:", script, bindings)
         resp = self.gdb.execute(script, bindings=bindings)
-        print("resp:", resp)
         if include_properties:
             for v in resp.data:
                 props = {k: v[0]["value"] for k, v in v["properties"].items()}
@@ -259,14 +258,14 @@ class GraphDatabase(BaseGraphDatabase):
     # Quering
     def query(self, query_dict, limit=None, offset=None, order_by=None,
               headers=None, only_ids=None):
-        # TODO: Define the requirements of the queries.
         """
         XXX
         """
-        import ipdb; ipdb.set_trace()
         script, bindings = self._query_generator(query_dict)
+        print("script:", script)
+        print("bindings:", bindings)
+        print("resp:", resp)
         resp = self.gdb.execute(script, bindings=bindings)
-        print("resp")
 
     def _query_generator(self, query_dict):
         conditions = query_dict["conditions"]
@@ -296,24 +295,39 @@ class GraphDatabase(BaseGraphDatabase):
 
     def _query_generator_patterns(self, patterns, conditions):
         pattern_alias = 1
-        script = "g.V().match("
-        for pattern in patterns:
+        selects = []
+        paths = nx.Graph()
+        for i, pattern in enumerate(patterns):
 
             source = pattern["source"]
             source_alias = source["alias"]
+            selects.append("'{0}'".format(source_alias))
             source_type_id = source["type_id"]
-            source_conditions = conditions.get(source_alias, [])
 
-            relation = pattern["relation"]
-            relation_alias = relation["slug"]
-            relation_type_id = relation["type_id"]
+            rel = pattern["relation"]
 
             target = pattern["target"]
-            target_alias = relation["alias"]
+            target_alias = target["alias"]
+            selects.append("'{0}'".format(target_alias))
             target_type_id = target["type_id"]
-            target_conditions = conditions.get(target_alias, [])
-            # __.as('alias').has("_label", "1").outE().has("_label", "2").inV().has("_label", "3").as('alias'),
-            
+
+            # We want something like this.
+            # """g.V().match(
+                # __.as('user_1').has('_label', '2').has('Name', neq(p0)).outE().has('_label', '1').inV().has('_label', '1').has('Name', neq(p1)).as('movie_1'),
+                # __.as('movie_1').has('_label', '1').has('Name', neq(p1)).outE().has('_label', '2').inV().has('_label', '3').has('Name', neq(p2)).as('actor_1')
+            # )
+                # .select('user_1','movie_1','movie_1','actor_1')"""
+            #
+
+            paths.add_edge(
+                source_type_id, target_type_id,
+                {"id": i, source_type_id: source,
+                "rel": rel, target_type_id: target})
+        ordered_paths = list(df_edge_traversal(paths, conditions))
+        matches = ",".join(ordered_paths)
+        select = ",".join(selects)
+        script = "g.V().match({0}).select({1})".format(matches, select)
+        return script
 
     def nodes_query(self, *args, **kwargs):
         # TODO: Define the requirements of the queries.
@@ -577,3 +591,60 @@ class GraphDatabase(BaseGraphDatabase):
                  if not k.startswith(self.PRIVATE_PREFIX)}
         self.delete_relationship(eid)
         self.create_relationship(vid, source, label, properties=props)
+
+
+def df_edge_traversal(g, conditions):
+    """
+    Based on networkx dfs_edges
+    """
+    visited = set()
+    start = g.nodes()[0]
+    stack = [(start, iter(g[start]))]
+    while stack:
+        parent, children = stack[-1]
+        try:
+            child = next(children)
+            eid = g[parent][child]["id"]
+            if eid not in visited:
+                # Build source query
+                source = g[parent][child][parent]
+                source_alias = source["alias"]
+                source_type_id = parent
+                source_conditions = conditions.get(source_alias, [])
+                source_str = "as('{0}').has('_label', '{1}')".format(
+                    source_alias, source_type_id)
+                if source_conditions:
+                    source_conditions = ".".join(source_conditions)
+                    source_str = "{0}.{1}".format(source_str, source_conditions)
+
+                rel = g[parent][child]["rel"]
+                rel_alias = rel["slug"]
+                rel_type_id = rel["type_id"]
+                rel_conditions = conditions.get(rel_alias, [])
+                rel_str = "bothE().has('_label', '{0}')".format(
+                    rel_type_id)
+                if rel_conditions:
+                    rel_conditions = ".".join(rel_conditions)
+                    rel_str = "{0}.{1}".format(rel_str, rel_conditions)
+
+                # Build target query
+                target = g[parent][child][child]
+                target_alias = target["alias"]
+                target_type_id = child
+                target_conditions = conditions.get(target_alias, [])
+                target_str = "has('_label', '{1}')".format(
+                    target_alias, target_type_id)
+                if target_conditions:
+                    target_conditions = ".".join(target_conditions)
+                    target_str = "{0}.{1}".format(target_str, target_conditions)
+                target_str = "{0}.as('{1}')".format(target_str, target_alias)
+
+                path = "__.{0}.{1}.bothV().{2}".format(
+                    source_str, rel_str, target_str)
+
+                yield path
+
+                visited.add(eid)
+                stack.append((child, iter(g[child])))
+        except StopIteration:
+            stack.pop()

@@ -9,10 +9,8 @@ class Q(BaseQ):
             lookup = "eq"
             match = "{0}".format(self.match)
         elif self.lookup in ["contains", "icontains"]:
-            # This behaviour is weird, textContains only works for tokenized
-            # words maybe ask about this on the list
-            lookup = "textContains"
-            match = "{0}".format(self.match)
+            lookup = "textRegex"
+            match = ".*{0}.*".format(self.match)
         elif self.lookup in ["startswith", "istartswith"]:
             lookup = "textPrefix"
             match = "{0}".format(self.match)
@@ -55,7 +53,6 @@ class Q(BaseQ):
         else:
             lookup = self.lookup
             match = ""
-        print("WTFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFf")
         return lookup, match
 
     def get_query_objects(self, prefix=None, params=None):
